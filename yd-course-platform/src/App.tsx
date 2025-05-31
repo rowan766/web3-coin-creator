@@ -10,6 +10,7 @@ import { Home } from './pages/Home'
 import { Courses } from './pages/Courses'
 import { CourseDetail } from './pages/CourseDetail'
 import { Dashboard } from './pages/Dashboard'
+import { Admin } from './pages/Admin'
 
 // 创建 QueryClient
 const queryClient = new QueryClient({
@@ -41,6 +42,7 @@ function App() {
                 <Route path="/courses" element={<Courses />} />
                 <Route path="/courses/:id" element={<CourseDetail />} />
                 <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/admin" element={<Admin />} />
               </Routes>
             </Layout>
           </Router>
