@@ -1,69 +1,39 @@
-// src/hooks/useCoursePlatform.ts
+// src/hooks/useYDToken.ts
 import { useState, useEffect, useCallback } from 'react'
 import { formatEther } from 'ethers'
 import { useWeb3React } from '@web3-react/core'
-import { useCoursePlatformContract } from './useContract'
+import { useYDTokenContract, getContractWithSigner } from './useContract'
 
-interface Course {
-  id: number
-  title: string
-  description: string
-  contentHash: string
-  price: bigint
-  instructor: string
-  isActive: boolean
-  createdAt: bigint
-  totalSales: bigint
+interface TokenInfo {
+  name: string
+  symbol: string
+  decimals: number
+  totalSupply: bigint
 }
 
-export function useCoursePlatform() {
+export function useYDToken() {
   const { account, chainId } = useWeb3React()
-  const contract = useCoursePlatformContract()
+  const contract = useYDTokenContract()
   
-  const [courses, setCourses] = useState<Course[]>([])
-  const [userCourses, setUserCourses] = useState<number[]>([])
+  const [tokenInfo, setTokenInfo] = useState<TokenInfo | null>(null)
+  const [balance, setBalance] = useState<bigint>(0n)
+  const [allowance, setAllowance] = useState<bigint>(0n)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // 获取所有活跃课程
-  const fetchCourses = useCallback(async () => {
-    if (!contract) {
-      // 如果没有合约，使用模拟数据
-      setCourses([
-        {
-          id: 1,
-          title: 'Web3 开发入门',
-          description: '从零开始学习 Web3 开发，包括智能合约、DApp 开发等核心概念',
-          contentHash: 'QmExample1',
-          price: BigInt('100000000000000000000'), // 100 代币
-          instructor: '0x1234567890abcdef1234567890abcdef12345678',
-          isActive: true,
-          createdAt: BigInt(Date.now()),
-          totalSales: BigInt(156)
-        },
-        {
-          id: 2,
-          title: 'DeFi 协议深度解析',
-          description: '深入理解 DeFi 协议的运作机制，学习如何构建去中心化金融应用',
-          contentHash: 'QmExample2',
-          price: BigInt('150000000000000000000'), // 150 代币
-          instructor: '0xabcdef1234567890abcdef1234567890abcdef12',
-          isActive: true,
-          createdAt: BigInt(Date.now()),
-          totalSales: BigInt(89)
-        },
-        {
-          id: 3,
-          title: 'NFT 开发实战',
-          description: '学习如何创建、部署和交易 NFT，包括元数据管理和市场集成',
-          contentHash: 'QmExample3',
-          price: BigInt('120000000000000000000'), // 120 代币
-          instructor: '0x9876543210fedcba9876543210fedcba98765432',
-          isActive: true,
-          createdAt: BigInt(Date.now()),
-          totalSales: BigInt(234)
-        }
-      ])
+  // 检查是否有合约地址配置
+  const hasContract = !!import.meta.env.VITE_YD_TOKEN_ADDRESS
+
+  // 获取代币基本信息
+  const fetchTokenInfo = useCallback(async () => {
+    if (!contract || !hasContract) {
+      console.log('No YD Token contract configured, using mock data')
+      setTokenInfo({
+        name: 'YD Token (Mock)',
+        symbol: 'YDT',
+        decimals: 18,
+        totalSupply: BigInt('1000000000000000000000000')
+      })
       return
     }
 
@@ -71,95 +41,172 @@ export function useCoursePlatform() {
       setIsLoading(true)
       setError(null)
       
-      const allCourses = await contract.getAllActiveCourses()
+      console.log('Fetching token info from contract...')
       
-      const formattedCourses = allCourses.map((course: any) => ({
-        id: Number(course.id),
-        title: course.title,
-        description: course.description,
-        contentHash: course.contentHash,
-        price: BigInt(course.price.toString()),
-        instructor: course.instructor,
-        isActive: course.isActive,
-        createdAt: BigInt(course.createdAt.toString()),
-        totalSales: BigInt(course.totalSales.toString())
-      }))
-
-      setCourses(formattedCourses)
-    } catch (err: any) {
-      console.error('Failed to fetch courses:', err)
-      setError('获取课程失败: ' + (err.reason || err.message))
-      
-      // 发生错误时使用模拟数据
-      setCourses([
-        {
-          id: 1,
-          title: 'Web3 开发入门 (演示)',
-          description: '从零开始学习 Web3 开发，包括智能合约、DApp 开发等核心概念',
-          contentHash: 'QmExample1',
-          price: BigInt('100000000000000000000'),
-          instructor: '0x1234567890abcdef1234567890abcdef12345678',
-          isActive: true,
-          createdAt: BigInt(Date.now()),
-          totalSales: BigInt(156)
-        }
+      // 直接调用合约方法，不需要 signer
+      const [name, symbol, decimals, totalSupply] = await Promise.all([
+        contract.name(),
+        contract.symbol(),
+        contract.decimals(),
+        contract.totalSupply(),
       ])
+
+      setTokenInfo({
+        name,
+        symbol,
+        decimals: Number(decimals),
+        totalSupply: BigInt(totalSupply.toString()),
+      })
+      
+      console.log('Token info fetched successfully:', { name, symbol, decimals: Number(decimals) })
+    } catch (err: any) {
+      console.error('Failed to fetch token info:', err)
+      
+      // 如果是不支持的操作错误，使用模拟数据
+      if (err.code === 'UNSUPPORTED_OPERATION') {
+        console.log('Contract calls not supported, using mock data')
+        setTokenInfo({
+          name: 'YD Token (Mock)',
+          symbol: 'YDT',
+          decimals: 18,
+          totalSupply: BigInt('1000000000000000000000000')
+        })
+        setError(null)
+      } else {
+        setError('获取代币信息失败，使用模拟数据')
+        setTokenInfo({
+          name: 'YD Token (Fallback)',
+          symbol: 'YDT',
+          decimals: 18,
+          totalSupply: BigInt('1000000000000000000000000')
+        })
+      }
     } finally {
       setIsLoading(false)
     }
-  }, [contract])
+  }, [contract, hasContract])
 
-  // 获取用户已购买的课程
-  const fetchUserCourses = useCallback(async () => {
-    if (!contract || !account) {
-      setUserCourses([])
+  // 获取用户余额
+  const fetchBalance = useCallback(async () => {
+    if (!contract || !account || !hasContract) {
+      if (account && !hasContract) {
+        setBalance(BigInt('1000000000000000000000')) // 1000 tokens
+      } else {
+        setBalance(0n)
+      }
       return
     }
 
     try {
-      const purchasedCourses = await contract.getUserCourses(account)
-      const courseIds = purchasedCourses.map((id: any) => Number(id))
-      setUserCourses(courseIds)
+      console.log('Fetching balance for account:', account)
+      const userBalance = await contract.balanceOf(account)
+      const balanceBigInt = BigInt(userBalance.toString())
+      setBalance(balanceBigInt)
+      console.log('Balance fetched:', formatEther(balanceBigInt), 'YDT')
     } catch (err: any) {
-      console.error('Failed to fetch user courses:', err)
-      setError('获取用户课程失败: ' + (err.reason || err.message))
+      console.error('Failed to fetch balance:', err)
+      
+      if (err.code === 'UNSUPPORTED_OPERATION') {
+        console.log('Balance query not supported, using mock balance')
+        setBalance(BigInt('1000000000000000000000'))
+        setError(null)
+      } else {
+        setError('获取余额失败，使用模拟数据')
+        setBalance(BigInt('1000000000000000000000'))
+      }
     }
-  }, [contract, account])
+  }, [contract, account, hasContract])
 
-  // 购买课程
-  const purchaseCourse = useCallback(async (courseId: number) => {
-    if (!contract || !account) {
-      throw new Error('合约或账户未连接')
+  // 获取授权额度
+  const fetchAllowance = useCallback(async () => {
+    if (!contract || !account || !hasContract) {
+      if (account && !hasContract) {
+        setAllowance(BigInt('500000000000000000000'))
+      } else {
+        setAllowance(0n)
+      }
+      return
+    }
+
+    try {
+      const platformAddress = import.meta.env.VITE_COURSE_PLATFORM_ADDRESS
+      if (platformAddress && platformAddress !== "0x0000000000000000000000000000000000000000") {
+        console.log('Fetching allowance for platform:', platformAddress)
+        const userAllowance = await contract.allowance(account, platformAddress)
+        const allowanceBigInt = BigInt(userAllowance.toString())
+        setAllowance(allowanceBigInt)
+        console.log('Allowance fetched:', formatEther(allowanceBigInt), 'YDT')
+      } else {
+        console.warn('No platform address configured')
+        setAllowance(BigInt('500000000000000000000'))
+      }
+    } catch (err: any) {
+      console.error('Failed to fetch allowance:', err)
+      
+      if (err.code === 'UNSUPPORTED_OPERATION') {
+        console.log('Allowance query not supported, using mock allowance')
+        setAllowance(BigInt('500000000000000000000'))
+        setError(null)
+      } else {
+        setError('获取授权额度失败，使用模拟数据')
+        setAllowance(BigInt('500000000000000000000'))
+      }
+    }
+  }, [contract, account, hasContract])
+
+  // 授权代币
+  const approve = useCallback(async (amount: bigint) => {
+    if (!account) {
+      throw new Error('请先连接钱包')
+    }
+
+    if (!contract || !hasContract) {
+      // 模拟授权
+      console.log('Simulating approval for:', formatEther(amount), 'YDT')
+      setIsLoading(true)
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      setAllowance(amount)
+      setIsLoading(false)
+      return { hash: '0x' + Math.random().toString(16).substr(2, 64) }
     }
 
     try {
       setIsLoading(true)
       setError(null)
       
-      const tx = await contract.purchaseCourse(courseId)
+      const platformAddress = import.meta.env.VITE_COURSE_PLATFORM_ADDRESS
+      if (!platformAddress) {
+        throw new Error('未配置课程平台合约地址')
+      }
       
-      console.log('购买交易已提交:', tx.hash)
+      console.log('Approving', formatEther(amount), 'YDT for platform:', platformAddress)
+      
+      // 获取带 signer 的合约
+      const contractWithSigner = await getContractWithSigner(contract)
+      if (!contractWithSigner) {
+        throw new Error('无法获取签名合约')
+      }
+      
+      const tx = await contractWithSigner.approve(platformAddress, amount.toString())
+      
+      console.log('Approval transaction submitted:', tx.hash)
       await tx.wait()
+      console.log('Approval transaction confirmed')
       
-      // 刷新用户课程列表
-      await fetchUserCourses()
-      await fetchCourses() // 刷新总销量
+      // 刷新授权额度
+      await fetchAllowance()
       
       return tx
     } catch (err: any) {
-      console.error('Purchase failed:', err)
-      let errorMessage = '购买失败'
+      console.error('Approval failed:', err)
       
-      if (err.reason) {
+      let errorMessage = '授权失败'
+      if (err.code === 'UNSUPPORTED_OPERATION') {
+        errorMessage = '当前网络不支持合约调用，请检查钱包连接'
+      } else if (err.reason) {
         errorMessage = err.reason
       } else if (err.message) {
-        if (err.message.includes('insufficient')) {
-          errorMessage = '余额不足'
-        } else if (err.message.includes('allowance')) {
-          errorMessage = '授权额度不足'
-        } else {
-          errorMessage = err.message
-        }
+        errorMessage = err.message
       }
       
       setError(errorMessage)
@@ -167,111 +214,103 @@ export function useCoursePlatform() {
     } finally {
       setIsLoading(false)
     }
-  }, [contract, account, fetchUserCourses, fetchCourses])
+  }, [contract, account, hasContract, fetchAllowance])
 
-  // 创建课程（讲师功能）
-  const createCourse = useCallback(async (
-    title: string,
-    description: string,
-    contentHash: string,
-    price: bigint,
-    instructor: string
-  ) => {
-    if (!contract || !account) {
-      throw new Error('合约或账户未连接')
+  // 转账
+  const transfer = useCallback(async (to: string, amount: bigint) => {
+    if (!account) {
+      throw new Error('请先连接钱包')
+    }
+
+    if (!contract || !hasContract) {
+      // 模拟转账
+      console.log('Simulating transfer of', formatEther(amount), 'YDT to:', to)
+      setIsLoading(true)
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      setBalance(prev => prev - amount)
+      setIsLoading(false)
+      return { hash: '0x' + Math.random().toString(16).substr(2, 64) }
     }
 
     try {
       setIsLoading(true)
       setError(null)
       
-      const tx = await contract.createCourse(
-        title,
-        description,
-        contentHash,
-        price.toString(),
-        instructor
-      )
+      console.log('Transferring', formatEther(amount), 'YDT to:', to)
       
-      console.log('创建课程交易已提交:', tx.hash)
+      // 获取带 signer 的合约
+      const contractWithSigner = await getContractWithSigner(contract)
+      if (!contractWithSigner) {
+        throw new Error('无法获取签名合约')
+      }
+      
+      const tx = await contractWithSigner.transfer(to, amount.toString())
+      
+      console.log('Transfer transaction submitted:', tx.hash)
       await tx.wait()
+      console.log('Transfer transaction confirmed')
       
-      // 刷新课程列表
-      await fetchCourses()
+      // 刷新余额
+      await fetchBalance()
       
       return tx
     } catch (err: any) {
-      console.error('Create course failed:', err)
-      const errorMessage = err.reason || err.message || '创建课程失败'
+      console.error('Transfer failed:', err)
+      
+      let errorMessage = '转账失败'
+      if (err.code === 'UNSUPPORTED_OPERATION') {
+        errorMessage = '当前网络不支持合约调用，请检查钱包连接'
+      } else if (err.reason) {
+        errorMessage = err.reason
+      } else if (err.message) {
+        errorMessage = err.message
+      }
+      
       setError(errorMessage)
       throw new Error(errorMessage)
     } finally {
       setIsLoading(false)
     }
-  }, [contract, account, fetchCourses])
-
-  // 格式化价格
-  const formatPrice = useCallback((price: bigint) => {
-    return formatEther(price)
-  }, [])
+  }, [contract, account, hasContract, fetchBalance])
 
   // 刷新所有数据
-  const refreshData = useCallback(async () => {
+  const refreshBalance = useCallback(async () => {
     await Promise.all([
-      fetchCourses(),
-      fetchUserCourses()
+      fetchTokenInfo(),
+      fetchBalance(),
+      fetchAllowance()
     ])
-  }, [fetchCourses, fetchUserCourses])
+  }, [fetchTokenInfo, fetchBalance, fetchAllowance])
 
   // 初始化加载
   useEffect(() => {
-    refreshData()
-  }, [contract, account, chainId, refreshData])
+    refreshBalance()
+  }, [refreshBalance])
 
-  // 监听合约事件
+  // 监听账户和链变化
   useEffect(() => {
-    if (!contract) return
-
-    // 监听课程创建事件
-    const handleCourseCreated = () => {
-      fetchCourses()
+    if (account) {
+      fetchBalance()
+      fetchAllowance()
     }
-
-    // 监听课程购买事件
-    const handleCoursePurchased = () => {
-      fetchCourses()
-      fetchUserCourses()
-    }
-
-    try {
-      contract.on('CourseCreated', handleCourseCreated)
-      contract.on('CoursePurchased', handleCoursePurchased)
-
-      return () => {
-        contract.off('CourseCreated', handleCourseCreated)
-        contract.off('CoursePurchased', handleCoursePurchased)
-      }
-    } catch (error) {
-      // 如果事件监听失败，使用定时刷新
-      const interval = setInterval(() => {
-        refreshData()
-      }, 30000) // 每30秒刷新一次
-
-      return () => clearInterval(interval)
-    }
-  }, [contract, fetchCourses, fetchUserCourses, refreshData])
+  }, [account, chainId, fetchBalance, fetchAllowance])
 
   return {
     // 数据
-    courses,
-    userCourses,
+    tokenInfo,
+    balance,
+    allowance,
     isLoading,
     error,
+    hasContract,
     
     // 方法
-    purchaseCourse,
-    createCourse,
-    refreshData,
-    formatPrice,
+    approve,
+    transfer,
+    refreshBalance,
+    
+    // 计算属性
+    formattedBalance: formatEther(balance),
+    formattedAllowance: formatEther(allowance),
   }
 }
